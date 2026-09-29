@@ -11,6 +11,7 @@ import { AnchorCoreStaking } from "../target/types/anchor_core_staking";
 import { MPL_CORE_PROGRAM_ID } from "@metaplex-foundation/mpl-core";
 import { Program } from "@coral-xyz/anchor";
 import { SystemProgram } from "@solana/web3.js";
+import { expect } from "chai";
 
 const MILLISECONDS_PER_DAY = 86400000;
 const REWARDS_BPS = 10000;
@@ -229,10 +230,10 @@ describe("anchor-core-staking", () => {
 
     console.log("\nYour transaction signature", tx);
 
-    console.log(
-      "User rewards balance",
-      (await provider.connection.getTokenAccountBalance(userRewardsAta)).value.uiAmount,
-    );
+    const balance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
+      .uiAmount;
+
+    expect(balance as number).greaterThan(0);
   });
 
   it("Time travel to the future", async () => {
@@ -354,5 +355,8 @@ describe("anchor-core-staking", () => {
       .rpc();
 
     console.log("\nYour transaction signature", tx);
+
+    const accoutData = await provider.connection.getAccountInfo(secondNftKeypair.publicKey);
+    expect(accoutData?.data.length).equal(1);
   });
 });
