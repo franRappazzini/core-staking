@@ -1,5 +1,5 @@
-use crate::state::Config;
 use crate::error::ErrorCode;
+use crate::state::Config;
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenInterface};
 use mpl_core::accounts::BaseCollectionV1;
@@ -36,8 +36,14 @@ pub struct Initialize<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,
 }
-pub fn handler(ctx: Context<Initialize>, rewards_bps: u16, freeze_period: u16) -> Result<()> {
+pub fn handler(
+    ctx: Context<Initialize>,
+    rewards_bps: u16,
+    freeze_period: u16,
+    burn_rewards: u64,
+) -> Result<()> {
     ctx.accounts.config.set_inner(Config {
+        burn_rewards,
         rewards_bps,
         freeze_period,
         rewards_bump: ctx.bumps.rewards_mint,

@@ -21,8 +21,9 @@ pub mod anchor_core_staking {
         ctx: Context<Initialize>,
         rewards_bps: u16,
         freeze_period: u16,
+        burn_rewards: u64,
     ) -> Result<()> {
-        initialize::handler(ctx, rewards_bps, freeze_period)
+        initialize::handler(ctx, rewards_bps, freeze_period, burn_rewards)
     }
 
     pub fn create_collection(
@@ -47,5 +48,9 @@ pub mod anchor_core_staking {
 
     pub fn claim_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
         claim_rewards::handler(ctx)
+    }
+
+    pub fn burn_staked_nft(ctx: Context<BurnStakedNft>) -> Result<()> {
+        burn_staked_nft::handler(ctx)
     }
 }
