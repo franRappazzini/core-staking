@@ -7,13 +7,13 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { MPL_CORE_PROGRAM_ID, fetchCollection, mplCore } from "@metaplex-foundation/mpl-core";
+import { lamports, publicKey } from "@metaplex-foundation/umi";
 
 import { AnchorCoreStaking } from "../target/types/anchor_core_staking";
 import { Program } from "@coral-xyz/anchor";
 import { SystemProgram } from "@solana/web3.js";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { expect } from "chai";
-import { publicKey } from "@metaplex-foundation/umi";
 
 const MILLISECONDS_PER_DAY = 86400000;
 const REWARDS_BPS = 10000;
@@ -30,6 +30,8 @@ describe("anchor-core-staking", () => {
 
   const umi = createUmi(provider.connection).use(mplCore());
 
+  const newOwner = anchor.web3.Keypair.generate(); // to receive transfers
+
   // Generate a keypair for the collection
   const collectionKeypair = anchor.web3.Keypair.generate();
 
@@ -42,6 +44,7 @@ describe("anchor-core-staking", () => {
   // Generate a keypair for the nft asset
   const nftKeypair = anchor.web3.Keypair.generate();
   const secondNftKeypair = anchor.web3.Keypair.generate();
+  const thirdNftKeypair = anchor.web3.Keypair.generate();
 
   // Find the config account (PDA)
   const config = anchor.web3.PublicKey.findProgramAddressSync(
@@ -79,6 +82,19 @@ describe("anchor-core-staking", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
+
+  it("Initialize Oracle account", async () => {
+    const INCENTIVES = new anchor.BN(5_000 * 5); // base fee tx * 5
+
+    const tx = await program.methods
+      .initOracle(INCENTIVES)
+      .accountsPartial({
+        signer: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    console.log("\nYour transaction signature", tx);
+  });
 
   it("Create a collection", async () => {
     const collectionName = "Test Collection";
@@ -314,6 +330,8 @@ describe("anchor-core-staking", () => {
     expect(Number(totalStaked)).equal(0);
   });
 
+  // burn
+
   it("Mint a 2nd NFT", async () => {
     const nftName = "2nd NFT";
     const nftUri = "https://example.com/nft";
@@ -417,5 +435,116 @@ describe("anchor-core-staking", () => {
       (a) => a.key == "total_staked",
     )?.value;
     expect(Number(totalStaked)).equal(0);
+  });
+
+  // transfer with oracle timestamp validation (verify current timestamp, it could fail)
+  it("Mint a 3rd NFT", async () => {
+    const nftName = "3rd NFT";
+    const nftUri = "https://example.com/nft";
+    const tx = await program.methods
+      .mintAsset(nftName, nftUri)
+      .accountsPartial({
+        user: provider.wallet.publicKey,
+        asset: thirdNftKeypair.publicKey,
+        collection: collectionKeypair.publicKey,
+        updateAuthority,
+        systemProgram: SystemProgram.programId,
+        mplCoreProgram: MPL_CORE_PROGRAM_ID,
+      })
+      .signers([thirdNftKeypair])
+      .rpc();
+    console.log("\nYour transaction signature", tx);
+    console.log("NFT address", thirdNftKeypair.publicKey.toBase58());
+  });
+
+  it("Update Oracle to a valid timestamp", async () => {
+    // first advance to a valid timestamp
+    const harcodedTimestamp = 1853928000000; // Saturday, 30 September 2028 at 12:00:00 UTC
+
+    // Advance time in milliseconds
+    await advanceTime({
+      absoluteTimestamp: harcodedTimestamp,
+    });
+    console.log("\nTime traveled to:", harcodedTimestamp);
+
+    const beforeLamports = await provider.connection.getBalance(provider.wallet.publicKey);
+
+    // update oracle
+    const tx = await program.methods
+      .updateOracle()
+      .accountsPartial({
+        signer: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    console.log("\nYour transaction signature", tx);
+
+    // validate rewards
+    const lamports = await provider.connection.getBalance(provider.wallet.publicKey);
+    expect(lamports).greaterThan(beforeLamports);
+  });
+
+  it("Transfer NFT", async () => {
+    const tx = await program.methods
+      .transfer()
+      .accountsPartial({
+        owner: provider.wallet.publicKey,
+        newOwner: newOwner.publicKey,
+        asset: thirdNftKeypair.publicKey,
+        collection: collectionKeypair.publicKey,
+        mplCoreProgram: MPL_CORE_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    console.log("\nYour transaction signature", tx);
+  });
+
+  it("Update Oracle to an invalid timestamp", async () => {
+    // first advance to a valid timestamp
+    const harcodedTimestamp = 1853949600000; // Saturday, 30 September 2028 at 18:00:00 UTC
+
+    // Advance time in milliseconds
+    await advanceTime({
+      absoluteTimestamp: harcodedTimestamp,
+    });
+    console.log("\nTime traveled to:", harcodedTimestamp);
+
+    const beforeLamports = await provider.connection.getBalance(provider.wallet.publicKey);
+
+    // update oracle
+    const tx = await program.methods
+      .updateOracle()
+      .accountsPartial({
+        signer: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    console.log("\nYour transaction signature", tx);
+
+    // validate rewards
+    const lamports = await provider.connection.getBalance(provider.wallet.publicKey);
+    expect(lamports).greaterThan(beforeLamports);
+  });
+
+  it("Fail to transfer NFT in not allowed timestamp", async () => {
+    try {
+      const tx = await program.methods
+        .transfer()
+        .accountsPartial({
+          owner: newOwner.publicKey,
+          newOwner: provider.wallet.publicKey,
+          asset: thirdNftKeypair.publicKey,
+          collection: collectionKeypair.publicKey,
+          mplCoreProgram: MPL_CORE_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([newOwner])
+        .rpc();
+      console.log("\nYour transaction signature", tx);
+
+      expect.fail("Must fail");
+    } catch (err: any) {
+      expect(err?.error?.errorCode?.code).equal("InvalidTimestampToTransfer");
+    }
   });
 });

@@ -53,4 +53,16 @@ pub mod anchor_core_staking {
     pub fn burn_staked_nft(ctx: Context<BurnStakedNft>) -> Result<()> {
         burn_staked_nft::handler(ctx)
     }
+
+    pub fn init_oracle(ctx: Context<InitOracle>, incentives: u64) -> Result<()> {
+        init_oracle::handler(ctx, incentives)
+    }
+
+    pub fn update_oracle(ctx: Context<UpdateOracle>) -> Result<()> {
+        update_oracle::handler(ctx)
+    }
+
+    pub fn transfer(ctx: Context<Transfer>) -> Result<()> {
+        transfer::handler(ctx)
+    }
 }

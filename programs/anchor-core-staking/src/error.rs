@@ -16,4 +16,6 @@ pub enum ErrorCode {
     FreezePeriodNotElapsed,
     #[msg("Invalid rewards bps")]
     InvalidRewardsBps,
+    #[msg("Invalid timestamp to transfer NFT. Allowed time is between 9am-5pm UTC")]
+    InvalidTimestampToTransfer,
 }
