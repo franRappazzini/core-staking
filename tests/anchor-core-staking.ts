@@ -6,12 +6,14 @@ import {
   burn,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
+import { MPL_CORE_PROGRAM_ID, fetchCollection, mplCore } from "@metaplex-foundation/mpl-core";
 
 import { AnchorCoreStaking } from "../target/types/anchor_core_staking";
-import { MPL_CORE_PROGRAM_ID } from "@metaplex-foundation/mpl-core";
 import { Program } from "@coral-xyz/anchor";
 import { SystemProgram } from "@solana/web3.js";
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { expect } from "chai";
+import { publicKey } from "@metaplex-foundation/umi";
 
 const MILLISECONDS_PER_DAY = 86400000;
 const REWARDS_BPS = 10000;
@@ -25,6 +27,8 @@ describe("anchor-core-staking", () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.anchorCoreStaking as Program<AnchorCoreStaking>;
+
+  const umi = createUmi(provider.connection).use(mplCore());
 
   // Generate a keypair for the collection
   const collectionKeypair = anchor.web3.Keypair.generate();
@@ -147,6 +151,13 @@ describe("anchor-core-staking", () => {
       })
       .rpc();
     console.log("\nYour transaction signature", tx);
+
+    // get collection attributes
+    const collection = await fetchCollection(umi, publicKey(collectionKeypair.publicKey));
+    const totalStaked = collection.attributes?.attributeList.find(
+      (a) => a.key == "total_staked",
+    )?.value;
+    expect(Number(totalStaked)).equal(1);
   });
 
   it("Try to unstake an NFT before the freeze period ends", async () => {
@@ -211,6 +222,14 @@ describe("anchor-core-staking", () => {
       ASSOCIATED_TOKEN_PROGRAM_ID,
     );
 
+    let beforeBalance = 0;
+    try {
+      beforeBalance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
+        .uiAmount as number;
+    } catch (_) {
+      // account not found, do nothing
+    }
+
     const tx = await program.methods
       .claimRewards()
       .accountsStrict({
@@ -233,7 +252,7 @@ describe("anchor-core-staking", () => {
     const balance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
       .uiAmount;
 
-    expect(balance as number).greaterThan(0);
+    expect(balance as number).greaterThan(beforeBalance);
   });
 
   it("Time travel to the future", async () => {
@@ -257,6 +276,14 @@ describe("anchor-core-staking", () => {
       ASSOCIATED_TOKEN_PROGRAM_ID,
     );
 
+    let beforeBalance = 0;
+    try {
+      beforeBalance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
+        .uiAmount as number;
+    } catch (_) {
+      // account not found, do nothing
+    }
+
     const tx = await program.methods
       .unstake()
       .accountsPartial({
@@ -275,10 +302,16 @@ describe("anchor-core-staking", () => {
       .rpc();
     console.log("\nYour transaction signature", tx);
 
-    console.log(
-      "User rewards balance",
-      (await provider.connection.getTokenAccountBalance(userRewardsAta)).value.uiAmount,
-    );
+    const balance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
+      .uiAmount;
+    expect(balance).greaterThan(beforeBalance);
+
+    // get collection attributes
+    const collection = await fetchCollection(umi, publicKey(collectionKeypair.publicKey));
+    const totalStaked = collection.attributes?.attributeList.find(
+      (a) => a.key == "total_staked",
+    )?.value;
+    expect(Number(totalStaked)).equal(0);
   });
 
   it("Mint a 2nd NFT", async () => {
@@ -314,6 +347,13 @@ describe("anchor-core-staking", () => {
       })
       .rpc();
     console.log("\nYour transaction signature", tx);
+
+    // get collection attributes
+    const collection = await fetchCollection(umi, publicKey(collectionKeypair.publicKey));
+    const totalStaked = collection.attributes?.attributeList.find(
+      (a) => a.key == "total_staked",
+    )?.value;
+    expect(Number(totalStaked)).equal(1);
   });
 
   it("Time travel to the future", async () => {
@@ -337,6 +377,14 @@ describe("anchor-core-staking", () => {
       ASSOCIATED_TOKEN_PROGRAM_ID,
     );
 
+    let beforeBalance = 0;
+    try {
+      beforeBalance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
+        .uiAmount as number;
+    } catch (_) {
+      // account not found, do nothing
+    }
+
     const tx = await program.methods
       .burnStakedNft()
       .accountsStrict({
@@ -356,7 +404,18 @@ describe("anchor-core-staking", () => {
 
     console.log("\nYour transaction signature", tx);
 
+    const balance = (await provider.connection.getTokenAccountBalance(userRewardsAta)).value
+      .uiAmount;
+    expect(balance).greaterThan(beforeBalance);
+
     const accoutData = await provider.connection.getAccountInfo(secondNftKeypair.publicKey);
     expect(accoutData?.data.length).equal(1);
+
+    // get collection attributes
+    const collection = await fetchCollection(umi, publicKey(collectionKeypair.publicKey));
+    const totalStaked = collection.attributes?.attributeList.find(
+      (a) => a.key == "total_staked",
+    )?.value;
+    expect(Number(totalStaked)).equal(0);
   });
 });

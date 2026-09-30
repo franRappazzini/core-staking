@@ -1,13 +1,17 @@
+use crate::error::ErrorCode;
+use crate::state::Config;
 use anchor_lang::prelude::*;
 use mpl_core::{
-    ID as MPL_CORE_ID,
     accounts::{BaseAssetV1, BaseCollectionV1},
-    instructions::{AddPluginV1CpiBuilder, UpdatePluginV1CpiBuilder},
-    types::{UpdateAuthority, Attribute, Attributes, Plugin, PluginAuthority, PluginType, FreezeDelegate},
     fetch_plugin,
+    instructions::{
+        AddPluginV1CpiBuilder, UpdateCollectionPluginV1CpiBuilder, UpdatePluginV1CpiBuilder,
+    },
+    types::{
+        Attribute, Attributes, FreezeDelegate, Plugin, PluginAuthority, PluginType, UpdateAuthority,
+    },
+    ID as MPL_CORE_ID,
 };
-use crate::state::Config;
-use crate::error::ErrorCode;
 
 #[derive(Accounts)]
 pub struct Stake<'info> {
@@ -41,16 +45,14 @@ pub struct Stake<'info> {
     pub mpl_core_program: UncheckedAccount<'info>,
 }
 pub fn handler(ctx: Context<Stake>) -> Result<()> {
-
     // We start by fetching the existing attributes (if they exist)
     let attributes_fetched: Option<Attributes> = fetch_plugin::<BaseAssetV1, Attributes>(
-        &ctx.accounts.asset.to_account_info(), 
+        &ctx.accounts.asset.to_account_info(),
         PluginType::Attributes,
     )
     .ok()
-    .map(|(_,attrs,_)| attrs);
+    .map(|(_, attrs, _)| attrs);
 
-    
     // Prepare the Attributes list to add or update based on the existing attributes
     let mut attributes_list: Vec<Attribute> = Vec::new();
 
@@ -60,8 +62,7 @@ pub fn handler(ctx: Context<Stake>) -> Result<()> {
         for attribute in &attributes.attribute_list {
             if attribute.key == "staked" {
                 require!(attribute.value == "false", ErrorCode::AlreadyStaked);
-            }
-            else if attribute.key != "staked_at" {
+            } else if attribute.key != "staked_at" {
                 attributes_list.push(attribute.clone());
             }
         }
@@ -91,38 +92,78 @@ pub fn handler(ctx: Context<Stake>) -> Result<()> {
     // If the Attributes Plugin does not exist, we add it
     if attributes_fetched.is_none() {
         AddPluginV1CpiBuilder::new(&ctx.accounts.mpl_core_program.to_account_info())
-        .asset(&ctx.accounts.asset.to_account_info())
-        .collection(Some(&ctx.accounts.collection.to_account_info()))
-        .payer(&ctx.accounts.owner.to_account_info())
-        .authority(Some(&ctx.accounts.update_authority.to_account_info()))
-        .system_program(&ctx.accounts.system_program.to_account_info())
-        .plugin(Plugin::Attributes(Attributes { attribute_list: attributes_list }))
-        .init_authority(PluginAuthority::UpdateAuthority)
-        .invoke_signed(&[signer_seeds])?;
+            .asset(&ctx.accounts.asset.to_account_info())
+            .collection(Some(&ctx.accounts.collection.to_account_info()))
+            .payer(&ctx.accounts.owner.to_account_info())
+            .authority(Some(&ctx.accounts.update_authority.to_account_info()))
+            .system_program(&ctx.accounts.system_program.to_account_info())
+            .plugin(Plugin::Attributes(Attributes {
+                attribute_list: attributes_list,
+            }))
+            .init_authority(PluginAuthority::UpdateAuthority)
+            .invoke_signed(&[signer_seeds])?;
     }
     // If the Attributes Plugin exists, we update it
     else {
         UpdatePluginV1CpiBuilder::new(&ctx.accounts.mpl_core_program.to_account_info())
-        .asset(&ctx.accounts.asset.to_account_info())
-        .collection(Some(&ctx.accounts.collection.to_account_info()))
-        .payer(&ctx.accounts.owner.to_account_info())
-        .authority(Some(&ctx.accounts.update_authority.to_account_info()))
-        .system_program(&ctx.accounts.system_program.to_account_info())
-        .plugin(Plugin::Attributes(Attributes { attribute_list: attributes_list }))
-        .invoke_signed(&[signer_seeds])?;
+            .asset(&ctx.accounts.asset.to_account_info())
+            .collection(Some(&ctx.accounts.collection.to_account_info()))
+            .payer(&ctx.accounts.owner.to_account_info())
+            .authority(Some(&ctx.accounts.update_authority.to_account_info()))
+            .system_program(&ctx.accounts.system_program.to_account_info())
+            .plugin(Plugin::Attributes(Attributes {
+                attribute_list: attributes_list,
+            }))
+            .invoke_signed(&[signer_seeds])?;
     }
 
     // Freeze the asset with the FreezeDelegate Plugin
     // Note that the FreezeDelegate is a Owner-Managed Plugin, so it needs to be signed by the owner
     AddPluginV1CpiBuilder::new(&ctx.accounts.mpl_core_program.to_account_info())
-    .asset(&ctx.accounts.asset.to_account_info())
-    .collection(Some(&ctx.accounts.collection.to_account_info()))
-    .payer(&ctx.accounts.owner.to_account_info())
-    .authority(Some(&ctx.accounts.owner.to_account_info()))
-    .system_program(&ctx.accounts.system_program.to_account_info())
-    .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: true }))
-    .init_authority(PluginAuthority::UpdateAuthority)
-    .invoke()?;
+        .asset(&ctx.accounts.asset.to_account_info())
+        .collection(Some(&ctx.accounts.collection.to_account_info()))
+        .payer(&ctx.accounts.owner.to_account_info())
+        .authority(Some(&ctx.accounts.owner.to_account_info()))
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: true }))
+        .init_authority(PluginAuthority::UpdateAuthority)
+        .invoke()?;
+
+    // get the collection total_staked attribute to then +1
+    let attributes_fetched: Option<Attributes> = fetch_plugin::<BaseCollectionV1, Attributes>(
+        &ctx.accounts.collection.to_account_info(),
+        PluginType::Attributes,
+    )
+    .ok()
+    .map(|(_, attrs, _)| attrs);
+
+    let mut attribute_list = vec![];
+
+    if let Some(attributes) = &attributes_fetched {
+        for attribute in &attributes.attribute_list {
+            if attribute.key == "total_staked" {
+                let mut total_staked = attribute.value.parse::<u64>().unwrap();
+                total_staked += 1;
+
+                attribute_list.push(Attribute {
+                    key: "total_staked".to_string(),
+                    value: total_staked.to_string(),
+                });
+            } else {
+                attribute_list.push(attribute.clone());
+            }
+        }
+    }
+
+    UpdateCollectionPluginV1CpiBuilder::new(&ctx.accounts.mpl_core_program.to_account_info())
+        .collection(&ctx.accounts.collection.to_account_info())
+        .payer(&ctx.accounts.owner.to_account_info())
+        .system_program(&ctx.accounts.system_program.to_account_info())
+        .authority(Some(&ctx.accounts.update_authority.to_account_info()))
+        .plugin(mpl_core::types::Plugin::Attributes(Attributes {
+            attribute_list,
+        }))
+        .invoke_signed(&[signer_seeds])?;
 
     Ok(())
 }
