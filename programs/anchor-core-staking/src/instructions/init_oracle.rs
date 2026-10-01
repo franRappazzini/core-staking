@@ -15,7 +15,7 @@ pub struct InitOracle<'info> {
     )]
     pub oracle: Account<'info, Oracle>,
 
-    // CHECK: just pda to hold rewards lamports
+    /// CHECK: just pda to hold rewards lamports
     #[account(
         init,
         payer = signer,

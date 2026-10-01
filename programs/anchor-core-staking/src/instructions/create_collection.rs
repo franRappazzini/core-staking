@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use mpl_core::{
-    instructions::{AddCollectionPluginV1CpiBuilder, CreateCollectionV2CpiBuilder},
-    types::{Attribute, Attributes},
+    instructions::CreateCollectionV2CpiBuilder,
+    types::{Attribute, Attributes, Plugin, PluginAuthority, PluginAuthorityPair},
     ID as MPL_CORE_ID,
 };
 
@@ -38,6 +38,12 @@ pub fn handler(ctx: Context<CreateCollection>, name: String, uri: String) -> Res
         &[ctx.bumps.update_authority],
     ];
 
+    // add the total_staked attribute to collection
+    let attribute_list = vec![Attribute {
+        key: "total_staked".to_string(),
+        value: "0".to_string(),
+    }];
+
     CreateCollectionV2CpiBuilder::new(&ctx.accounts.mpl_core_program.to_account_info())
         .collection(&ctx.accounts.collection.to_account_info())
         .payer(&ctx.accounts.payer.to_account_info())
@@ -45,22 +51,10 @@ pub fn handler(ctx: Context<CreateCollection>, name: String, uri: String) -> Res
         .system_program(&ctx.accounts.system_program.to_account_info())
         .name(name)
         .uri(uri)
-        .invoke_signed(&[signer_seeds])?;
-
-    // add the total_staked attribute to collection
-    let attribute_list = vec![Attribute {
-        key: "total_staked".to_string(),
-        value: "0".to_string(),
-    }];
-
-    AddCollectionPluginV1CpiBuilder::new(&ctx.accounts.mpl_core_program.to_account_info())
-        .collection(&ctx.accounts.collection.to_account_info())
-        .payer(&ctx.accounts.payer.to_account_info())
-        .authority(Some(&ctx.accounts.update_authority.to_account_info()))
-        .system_program(&ctx.accounts.system_program.to_account_info())
-        .plugin(mpl_core::types::Plugin::Attributes(Attributes {
-            attribute_list,
-        }))
+        .plugins(vec![PluginAuthorityPair {
+            plugin: Plugin::Attributes(Attributes { attribute_list }),
+            authority: Some(PluginAuthority::UpdateAuthority),
+        }])
         .invoke_signed(&[signer_seeds])?;
 
     Ok(())

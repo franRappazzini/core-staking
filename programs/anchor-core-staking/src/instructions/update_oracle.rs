@@ -13,7 +13,7 @@ pub struct UpdateOracle<'info> {
     )]
     pub oracle: Account<'info, Oracle>,
 
-    // CHECK: just pda to hold rewards lamports
+    /// CHECK: just pda to hold rewards lamports
     #[account(
         mut,
         seeds = [b"oracle_vault"],

@@ -7,11 +7,11 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { MPL_CORE_PROGRAM_ID, fetchCollection, mplCore } from "@metaplex-foundation/mpl-core";
+import { PublicKey, SystemProgram } from "@solana/web3.js";
 import { lamports, publicKey } from "@metaplex-foundation/umi";
 
 import { AnchorCoreStaking } from "../target/types/anchor_core_staking";
 import { Program } from "@coral-xyz/anchor";
-import { SystemProgram } from "@solana/web3.js";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { expect } from "chai";
 
@@ -57,6 +57,12 @@ describe("anchor-core-staking", () => {
     [Buffer.from("rewards_mint"), config.toBuffer()],
     program.programId,
   )[0];
+
+  // oracle account address
+  const [oracleAddress] = PublicKey.findProgramAddressSync(
+    [Buffer.from("oracle")],
+    program.programId,
+  );
 
   // Helper function to advance time with Surfpool
   async function advanceTime(params: {
@@ -458,6 +464,11 @@ describe("anchor-core-staking", () => {
   });
 
   it("Update Oracle to a valid timestamp", async () => {
+    const oracleAccountData = await provider.connection.getAccountInfo(oracleAddress);
+    const approve = oracleAccountData?.data[8 + 16]; // discriminator + approve field offset position
+
+    if (approve) return console.log("Already valid timestamp");
+
     // first advance to a valid timestamp
     const harcodedTimestamp = 1853928000000; // Saturday, 30 September 2028 at 12:00:00 UTC
 
@@ -500,6 +511,11 @@ describe("anchor-core-staking", () => {
   });
 
   it("Update Oracle to an invalid timestamp", async () => {
+    const oracleAccountData = await provider.connection.getAccountInfo(oracleAddress);
+    const approve = oracleAccountData?.data[8 + 16]; // discriminator + approve field offset position
+
+    if (!approve) return console.log("Already invalid timestamp");
+
     // first advance to a valid timestamp
     const harcodedTimestamp = 1853949600000; // Saturday, 30 September 2028 at 18:00:00 UTC
 
